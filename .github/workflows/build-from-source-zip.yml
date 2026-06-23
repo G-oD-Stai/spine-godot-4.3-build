@@ -1,0 +1,130 @@
+name: Build spine-godot from uploaded source zip
+
+on:
+  workflow_dispatch:
+
+env:
+  SOURCE_ZIP: spine-godot-4.3-godot-4.6.2-fixed-source.zip
+  GODOT_CPP_API_VERSION: '4.6'
+
+jobs:
+  build-windows:
+    name: Build Windows GDExtension
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unpack source zip
+        shell: bash
+        run: |
+          set -e
+          test -f "$SOURCE_ZIP"
+          mkdir -p source
+          unzip -q "$SOURCE_ZIP" -d source
+          test -d source/spine-godot/build
+          test -d source/spine-cpp
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install SCons
+        run: python -m pip install --upgrade pip scons
+
+      - name: Build Windows editor/debug/release
+        shell: bash
+        run: |
+          set -e
+          cd source/spine-godot/build
+          chmod +x setup-extension.sh build-extension.sh
+          ./setup-extension.sh 4.6.2-stable false
+          ./build-extension.sh windows
+
+      - name: Upload Windows bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: spine-godot-4.3-godot-4.6.2-windows-bin
+          path: source/spine-godot/example-v4-extension/bin/**
+          retention-days: 7
+
+  build-web:
+    name: Build Web GDExtension
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unpack source zip
+        shell: bash
+        run: |
+          set -e
+          test -f "$SOURCE_ZIP"
+          mkdir -p source
+          unzip -q "$SOURCE_ZIP" -d source
+          test -d source/spine-godot/build
+          test -d source/spine-cpp
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v11
+        with:
+          version: 4.0.20
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install SCons
+        run: python -m pip install --upgrade pip scons
+
+      - name: Build Web threaded + non-threaded debug/release
+        shell: bash
+        run: |
+          set -e
+          cd source/spine-godot/build
+          chmod +x setup-extension.sh build-extension.sh
+          ./setup-extension.sh 4.6.2-stable false
+          ./build-extension.sh web
+
+      - name: Upload Web bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: spine-godot-4.3-godot-4.6.2-web-bin
+          path: source/spine-godot/example-v4-extension/bin/**
+          retention-days: 7
+
+  package-plugin:
+    name: Package plugin zip
+    runs-on: ubuntu-22.04
+    needs: [build-windows, build-web]
+    steps:
+      - name: Download Windows bin
+        uses: actions/download-artifact@v4
+        with:
+          name: spine-godot-4.3-godot-4.6.2-windows-bin
+          path: artifacts/windows
+
+      - name: Download Web bin
+        uses: actions/download-artifact@v4
+        with:
+          name: spine-godot-4.3-godot-4.6.2-web-bin
+          path: artifacts/web
+
+      - name: Merge and zip plugin
+        shell: bash
+        run: |
+          set -e
+          mkdir -p final/bin
+          cp -r artifacts/windows/* final/bin/
+          cp -r artifacts/web/* final/bin/
+          cd final
+          zip -r ../spine-godot-4.3-godot-4.6.2-windows-web-fixed.zip bin
+
+      - name: Upload combined plugin zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: spine-godot-4.3-godot-4.6.2-windows-web-fixed-zip
+          path: spine-godot-4.3-godot-4.6.2-windows-web-fixed.zip
+          retention-days: 7
